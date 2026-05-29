@@ -1,0 +1,13 @@
+To install dimRetEvoSim, download and unpack the tarball where you want
+the installation (do e.g. "tar -xzf dimRetEvoSim_0.1.5.tar.gz"). 
+Then run "make -s". If you want a different compiler or
+mode than the defaults, then, instead of "make -s", use e.g.
+"make gccrelease" or "make -s -f makefile_icc_release_static".
+
+dimRetEvoSim uses getopt which isn't included in the dimRetEvoSim distribution.
+If you don't have getopt, and don't want to install it, and
+don't care about command line options in dimRetEvoSim, you can get by by
+defining NoGetopt; you can do that by e.g. uncommenting the line
+"#CFLAGS += -DNoGetopt" in makefile_core. You can still use 
+dimRetEvoSim with default options.
+

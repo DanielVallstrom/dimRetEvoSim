@@ -1,0 +1,441 @@
+# Core makefile for dimRetEvoSim.
+
+
+# The current version.
+version = 0.4.3
+
+
+# If CC or MODE are not defined the following defaults will be used:
+
+CC ?= gcc
+MODE ?= release
+DYNMODE ?= dynamic
+PRINTEVO ?= false
+# Set PRINTEVO to true if you want to print the evolution graphs,
+# using OpenGL and Freeglut, which need to be installed.
+
+
+# Determine the platform. I'm not sure that OS is used anywhere though.
+
+ifeq ($(shell uname),Linux)
+    OS = Linux
+    LINKFLAGS += -lm
+else 
+ifeq ($(shell uname),WindowsNT)
+    OS = WindowsNT
+else 
+ifeq ($(shell uname),SunOS)
+    OS = SunOS
+    LINKFLAGS += -lm
+endif 
+endif 
+endif
+
+
+# OpenGL and Freeglut flags.
+ifeq ($(PRINTEVO),true)
+    LINKFLAGS += -lglut
+    CFLAGS +=  \
+	      -D PrintEvo
+endif
+
+
+# Set the common C flags.
+
+ifeq ($(CC),gcc)
+
+CFLAGS +=                                \
+	-std=c17 -pedantic               \
+	-fstrict-aliasing                \
+	-Wall                            \
+	-Wno-parentheses                 \
+	-Wformat-nonliteral              \
+	-Wformat-security                \
+	-Wformat=2                       \
+	-Wunknown-pragmas                \
+	-W                               \
+	-Wundef                          \
+	-Wshadow                         \
+	-Wpointer-arith                  \
+	-Wbad-function-cast              \
+	-Wcast-qual                      \
+	-Wcast-align                     \
+	-Wno-sign-compare                \
+	-Waggregate-return               \
+	-Wstrict-prototypes              \
+	-Wmissing-prototypes             \
+	-Wmissing-declarations           \
+	-Wredundant-decls                \
+	-Wnested-externs                 \
+	-Wdisabled-optimization          \
+	-Wno-implicit-fallthrough        \
+	-D evoSimOS_$(OS)                \
+	-D 'evoSimVersion="$(version)"'
+
+# The annoying gcc flag -Wparentheses is included in the -Wall flag, resulting
+# in warnings about e.g. standard use of && and || precedence. Hence it is
+# turned of explicitly. However, -Wparentheses also includes some sensible
+# warnings so it might be good to occasionally turn it on.
+#   Beg the gcc people to fix their broken warnings!
+
+#	-Winline
+#	-Wwrite-strings
+# -Wconversion gives weird warnings!
+
+else
+ifeq ($(CC),icc)
+
+CFLAGS +=                                 \
+	-std=c99 -w2 -Wall -wd810         \
+	-D 'evoSimVersion="$(version)"'
+
+
+# If the Lit type isn't the same as unsigned int you will be drowned in
+# #810 warnings from icc if that particular warning isn't turned off.
+
+else
+
+endif
+endif
+
+
+# Set different flags for different compile modes. Only one mode is built.
+
+# Release flags.
+
+ifeq ($(CC),gcc)
+
+CRELEASEFLAGS +=                   \
+	-O3                        \
+	-fstrict-aliasing          \
+	-ffast-math                \
+	-fgcse                     \
+	-fexpensive-optimizations  \
+	-finline-functions         \
+	-fomit-frame-pointer       \
+	-fschedule-insns           \
+	-fschedule-insns2          \
+	-D NDEBUG                  
+	
+#	-D OpenMP -fopenmp
+# OpenMP slows down the program a lot --- 2-3 times on things
+# that should be to some extent embarrassingly parallelizable.
+
+# What about these flags?
+#	-march=??
+#	-march=AMD???
+#	-funroll-all-loops
+#	-fsingle-precision-constant
+#	-fargument-noalias
+#	-fargument-noalias-global
+
+#	-g
+
+#	-fbranch-probabilities
+#	-fprofile-arcs
+
+# To enable profiling do:
+#   1) Compile with -fprofile-arcs.
+#   2) Run the program on a sample.
+#   3) Compile with -fbranch-probabilities.
+
+# -g is used together with e.g. cachegrind.
+
+else
+ifeq ($(CC),icc)
+
+CRELEASEFLAGS +=              \
+	-O3                   \
+	-D NDEBUG
+
+else
+
+endif
+endif
+
+
+
+# Debug flags.
+
+ifeq ($(CC),gcc)
+
+#-O
+CDEBUGFLAGS += -Og -g
+
+
+else
+ifeq ($(CC),icc)
+
+CDEBUGFLAGS += -O -g
+
+
+else
+
+endif
+endif
+
+
+
+# Profiling flags.
+
+ifeq ($(CC),gcc)
+
+CPROFILEFLAGS +=                   \
+	-Og -pg                    \
+	-D NDEBUG                  \
+	-fstrict-aliasing          \
+	-ffast-math                \
+	-fgcse                     \
+	-fexpensive-optimizations  \
+	-fschedule-insns           \
+	-fschedule-insns2
+
+#	-fprofile-arcs -ftest-coverage
+
+
+else
+ifeq ($(CC),icc)
+
+CPROFILEFLAGS +=              \
+	-O2 -p -g             \
+	-prof_genx
+
+else
+
+endif
+endif
+
+
+
+# Set flags depending on the compiling mode.
+
+ifeq ($(MODE),debug)
+    CFLAGS += $(CDEBUGFLAGS)
+else
+ifeq ($(MODE),profile)
+    CFLAGS += $(CPROFILEFLAGS)
+else
+ifeq ($(MODE),release)
+    CFLAGS += $(CRELEASEFLAGS)
+endif
+endif
+endif
+
+
+
+# Set flags depending on the static/dynamic flag.
+ifeq ($(DYNMODE),static)
+ifeq ($(CC),icc)
+    # What is the icc flag???
+    CFLAGS += -static
+else
+    CFLAGS += --static
+endif
+endif
+
+
+
+# AssertionLevel determines how expensive assertions are made. At 0, no
+# assertions are made and NDEBUG will be defined. At 1, NDEBUG will not be
+# defined and ordinary assertions made by assert() are made. At 2, assert2()
+# assertions, which are more expensive to perform than plain assertions, will
+# be made in addition to assert() assertions. At 3, assert3() assertions and
+# all level 2 assertions will be made. And so on...
+#   If NDEBUG is defined, no assertions will be made regardless of assertLevel
+# and AssertionLevel.
+assertLevel = 4
+
+ifeq ($(assertLevel),0)
+    CFLAGS += -D NDEBUG
+endif
+
+CFLAGS += -D AssertionLevel=$(assertLevel)
+
+# If you don't want to use getopt, uncomment the line below.
+#CFLAGS += -D NoGetopt
+
+
+
+# The directory where the object files are.
+objDir = objects
+
+# API (or non-main) library objects.
+objNames = evoSim.o options.o common.o printEvo.o
+objs = $(foreach f, $(objNames), $(objDir)/$(f))
+
+# dimRetEvoSim objects.
+objects = $(objDir)/dimRetEvoSim.o $(objs)
+
+
+# Fix the default rule. The objects directory is created for github.
+#$(objDir)/%.o: %.c
+#	$(CC) -c $(CFLAGS) $< -o $@
+$(objDir)/%.o: %.c
+	@mkdir -p $(objDir)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+
+# Files included in a distribution.
+distFiles =         *.[ch]                                     \
+	            Makefile makefile_core                     \
+	            makefile_gcc_debug makefile_gcc_profile    \
+	            makefile_gcc_release                       \
+	            makefile_gcc_debug_static                  \
+	            makefile_gcc_profile_static                \
+	            makefile_gcc_release_static                \
+	            makefile_icc_debug makefile_icc_profile    \
+	            makefile_icc_release                       \
+	            makefile_icc_debug_static                  \
+	            makefile_icc_profile_static                \
+	            makefile_icc_release_static                \
+	            README INSTALL LICENSE                     \
+	            configure
+
+
+.PHONY: clean
+
+all: dimRetEvoSim ;
+
+dimRetEvoSim: $(objects)
+		$(CC) -o dimRetEvoSim $(CFLAGS) $(objects)  \
+                                      $(LINKFLAGS)
+	            ar -rc $(objDir)/libevosim.a $(objs)
+
+api: $(objs)
+	ar -rc $(objDir)/libevosim.a $(objs)
+
+clean:
+	rm -f $(objDir)/*.o $(objDir)/libevosim.a dimRetEvoSim  \
+              dimRetEvoSimOneFile
+
+
+#dirs
+#	mkdir objects
+
+
+# Make a gzipped tar distribution with a dimRetEvoSim parent directory.
+# I.e. the files are packed under a dimRetEvoSim directory.
+dist:
+	rm -rf dimRetEvoSim_$(version)
+	mkdir dimRetEvoSim_$(version)
+	mkdir dimRetEvoSim_$(version)/objects
+	cp -a $(distFiles) dimRetEvoSim_$(version)
+	tar -cf dimRetEvoSim_$(version).tar          \
+                dimRetEvoSim_$(version)
+	gzip -f dimRetEvoSim_$(version).tar
+	rm -rf dimRetEvoSim_$(version)
+
+# Make a gzipped tar distribution with a dimRetEvoSim parent directory.
+# I.e. the files are packed under a dimRetEvoSim directory.
+# With a fixed tar name.
+dst:
+	rm -rf dimRetEvoSim_$(version)
+	mkdir dimRetEvoSim_$(version)
+	mkdir dimRetEvoSim_$(version)/objects
+	cp -a $(distFiles) dimRetEvoSim_$(version)
+	tar -cf dimRetEvoSim.tar          \
+                dimRetEvoSim_$(version)
+	gzip -f dimRetEvoSim.tar
+	rm -rf dimRetEvoSim_$(version)
+
+# Make a gzipped flat tar distribution with no dimRetEvoSim parent
+# directory. I.e. the files are packed at top level under no
+# dimRetEvoSim directory.
+#   Pack the files under a dimRetEvoSim directory instead???!!
+flatdist:
+	tar -cf dimRetEvoSim.tar $(distFiles)
+	gzip -f dimRetEvoSim.tar
+
+# Make a backup.
+backup: flatdist
+	mount /mnt/floppy
+	cp -p dimRetEvoSim.tar.gz /mnt/floppy/
+
+# Make a temporary backup.
+tmpbackup:
+	tar -cf tmpdres.tar *.[ch] makefile_core
+	gzip -f tmpdres.tar
+	mount /mnt/floppy
+	cp -p tmpdres.tar.gz /mnt/floppy
+
+# Make and mail a dist.
+distmail: dist
+	echo "dimRetEvoSim_$(version)" |                \
+          mutt -a dimRetEvoSim_$(version).tar.gz -s     \
+            "dimRetEvoSim_$(version)" daniel.vallstrom@gmail.com
+
+
+# Make a freak dimRetEvoSim version where all the c-files are put into one big file.
+onefile:
+	$(CC) $(CFLAGS) -o dimRetEvoSimOneFile  \
+                           dimRetEvoSimPutInOneFile.c $(LINKFLAGS)
+
+
+# Do a diff of a file $ and its backup version.
+# How to do this??? Is is possible to use a variable argument $?
+#diff:
+#	tar -xzf dimRetEvoSim.tar.gz $ -O | diff --minimal $ -
+
+
+# Create references.
+tags:
+	 ctags *.[ch]
+
+
+# Shortcut commands bringing everything into this file for reference:
+
+gccdebug:
+	make -f makefile_gcc_debug
+
+gccprint:
+	make -f makefile_gcc_release_print
+
+gccprofile:
+	make -f makefile_gcc_profile
+
+gccrelease:
+	make -f makefile_gcc_release
+
+iccdebug:
+	make -f makefile_icc_debug
+
+iccprofile:
+	make -f makefile_icc_profile
+
+iccrelease:
+	make -f makefile_icc_release
+
+
+# Installs dimRetEvoSim. Fix this!!
+install:
+	mkdir -p /usr/local/lib
+	cp -pu $(objDir)/libevosim.a /usr/local/lib/libevosim.a
+	mkdir -p /usr/local/include
+	cp -pu evoSim.h /usr/local/include/evoSim.h
+	mkdir -p /usr/local/bin
+	cp -pu dimRetEvoSim /usr/local/bin/dimRetEvoSim
+
+uninstall:
+	rm -f /usr/local/lib/libevosim.a
+	rm -f /usr/local/include/evoSim.h
+	rm -f /usr/local/bin/dimRetEvoSim
+
+
+# Generate dependencies. Use "make -s deps", at least if gcc is the default.
+# Otherwise use any gcc make file, e.g. "make -s deps -f makefile_gcc_debug".
+deps:
+	$(CC) $(CFLAGS) -MM -MT '$$(objDir)/dimRetEvoSim.o' dimRetEvoSim.c
+	$(CC) $(CFLAGS) -MM -MT '$$(objDir)/evoSim.o'       evoSim.c
+	$(CC) $(CFLAGS) -MM -MT '$$(objDir)/options.o'      options.c
+	$(CC) $(CFLAGS) -MM -MT '$$(objDir)/common.o'       common.c
+	$(CC) $(CFLAGS) -MM -MT '$$(objDir)/printEvo.o'     printEvo.c
+
+# Dependencies. Dependencies can be generated with "make -s deps" or something
+# like that. See deps above.
+$(objDir)/dimRetEvoSim.o: dimRetEvoSim.c evoSim.h options.h common.h  \
+                          printEvo.h
+$(objDir)/evoSim.o: evoSim.c evoSim.h common.h compilerMacros.h
+$(objDir)/options.o: options.c options.h evoSim.h common.h
+$(objDir)/common.o: common.c common.h compilerMacros.h
+$(objDir)/printEvo.o: printEvo.c printEvo.h evoSim.h common.h
+
